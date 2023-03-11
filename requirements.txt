@@ -1,0 +1,10 @@
+flask
+flask_restful
+flask_uploads
+flask_wtf
+wtforms
+ruamel-yaml
+werkzeug == 0.16.0
+markupsafe==2.0.1
+roboflow 
+waitress
