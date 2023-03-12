@@ -1,5 +1,5 @@
 # retail shoe product finder
-
+This is a retail shoe product finder incorporating he use of YOLOV5 trained model on Roboflow
 
 ### 1. Install the dependencies
 ```
@@ -20,7 +20,7 @@ python main.py
 ```
 
 ### 4. Deploy to AWS EC2
-
+You can configure amazon ec2 instance, I used c1.medium instance type and deep learning OS (Ubuntu ver 20)
 
 
 
