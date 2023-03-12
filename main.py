@@ -1,48 +1,73 @@
-from flask import Flask, render_template,send_from_directory,url_for
-from flask_restful import Resource, Api, reqparse
-from flask_uploads import UploadSet,IMAGES,configure_uploads
-from flask_wtf import FlaskForm
-from flask_wtf.file import FileField, FileRequired, FileAllowed
-from wtforms import SubmitField
-from roboflow import Roboflow
+import os
+import base64
+from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
-from waitress import serve
+from roboflow import Roboflow
+from PIL import Image
+import requests
+from io import BytesIO
+from flask_cors import CORS
+from dotenv import dotenv_values
+from flask import send_file
+
+import numpy as np
+
 app = Flask(__name__)
-app.config['UPLOAD_PHOTOS_DEST']='uploads'
+CORS(app)
+config = dotenv_values(".env")
+# Load the trained model
 
-photos = UploadSet('photos',IMAGES)
-api = Api(app)
+rf = Roboflow(api_key=config["ROBOFLOW_API_KEY"])
+project = rf.workspace("school-oxayw").project("shoe-classifier")
+model = project.version(3).model
 
-class UploadForm(FlaskForm):
-    photo = FileField(
-        validators=[
-        FileAllowed(photos,"only images are allowed"),
-        FileRequired("File should not be empty")
-        ])
-    submit = SubmitField('Upload')
+# Define the allowed file extensions
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
+UPLOAD_FOLDER = 'uploads'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-@app.route('/uploads/<filename>')
-def get_file(filename):
-    return send_from_directory(app.config['UPLOADED_PHOTOS_DEST'],filename)
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+def preprocess_image(image):
+    # Resize image to match the input shape of the model
+    image = image.resize((224, 224))
+    # Convert PIL image to numpy array
+    image_array = np.array(image)
+    # Normalize pixel values to be between 0 and 1
+    image_array = image_array / 255.0
+    # Add batch dimension
+    image_array = np.expand_dims(image_array, axis=0)
+    return image_array
 
-@app.route('/', methods =['GET','POST'])
-def upload_form():
-    form = UploadForm
-    if form.validate_on_submit():
-        filename = photos.save(form.photo.data)
-        file_url = url_for('get_file',filename=filename)
-        # load the model
-        rf = Roboflow(api_key="nDHiyB2cy2bkE6DoVYm9")
-        project = rf.workspace("school-oxayw").project("shoe-classifier")
-        model = project.version(3).model
-        # infer on a local image
-        print(model.predict('/uploads/'+filename).json())
-        
-    else:
-        file_url = None
-    
-    return render_template('index.html',form = form,file_url=file_url)
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return 'No file selected', 400
+
+    file = request.files['file']
+    filename = secure_filename(file.filename)
+
+    if not allowed_file(filename):
+        return 'Invalid file type', 400
+
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+
+    # Save uploaded image to the server
+    file.save(file_path)
+    predictions = model.predict(file_path).json()
+   
+    with open(file_path, "rb") as f:
+        image_bytes = f.read()
+    encoded_image = base64.b64encode(image_bytes).decode()
+    prediction=predictions["predictions"][0]["predictions"][0]["class"]
+    # Return the predictions and encoded image as a JSON response
+    response_data = {
+        'prediction':prediction,
+        'image': encoded_image
+    }
+    return response_data, 200
 
 def create_app():
    return app
